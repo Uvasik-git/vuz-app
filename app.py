@@ -220,14 +220,63 @@ if not MOBILE:
 # ---------- Тело таблицы ----------
 sorted_rows = get_sorted_rows()
 
-for row in sorted_rows:
-    if MOBILE:
-        row_cols = st.columns(len(columns))
-        for i, col in enumerate(columns):
+if MOBILE:
+    # --- МОБИЛЬНАЯ ВЕРСИЯ (КРАСИВАЯ ТАБЛИЦА) ---
+    # Формируем HTML-таблицу с горизонтальной прокруткой
+    html = '<div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">'
+    html += '<table style="width: 100%; border-collapse: collapse; text-align: left; font-family: sans-serif;">'
+    
+    # Заголовки таблицы
+    html += '<thead><tr style="background-color: #f0f2f6; border-bottom: 2px solid #ddd;">'
+    for col in columns:
+        marker = ""
+        if sort_info["column"] == col["name"]:
+            marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
+        html += f'<th style="padding: 10px; white-space: nowrap; border-right: 1px solid #ddd;">{col["name"]}{marker}</th>'
+    html += '</tr></thead><tbody>'
+    
+    # Строки таблицы
+    for row in sorted_rows:
+        html += '<tr style="border-bottom: 1px solid #eee;">'
+        for col in columns:
             val = row["values"].get(col["name"], "")
-            with row_cols[i]:
-                st.markdown(f"**{val}**")
-    else:
+            html += f'<td style="padding: 10px; white-space: nowrap; border-right: 1px solid #eee;">{val}</td>'
+        html += '</tr>'
+    
+    html += '</tbody></table></div>'
+    
+    # Выводим на экран
+    st.markdown(html, unsafe_allow_html=True)
+    
+    # Кнопки сортировки под таблицей (чтобы на телефоне было удобно нажимать)
+    st.markdown("<br>**Сортировать по:**", unsafe_allow_html=True)
+    cols = st.columns(2)
+    for i, col in enumerate(columns):
+        with cols[i % 2]:
+            marker = ""
+            if sort_info["column"] == col["name"]:
+                marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
+            if st.button(f"{col['name']}{marker}", key=f"mob_sort_{col['name']}", use_container_width=True):
+                click_header(col["name"])
+                st.rerun()
+
+else:
+    # --- ДЕСКТОПНАЯ ВЕРСИЯ (РЕДАКТИРУЕМАЯ) ---
+    # Заголовок таблицы
+    header_cols = st.columns(len(columns) + 1)
+    for i, col in enumerate(columns):
+        marker = ""
+        if sort_info["column"] == col["name"]:
+            marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
+        with header_cols[i]:
+            label = f"**{col['name']}{marker}**"
+            if st.button(label, key=f"sort_{col['name']}", use_container_width=True):
+                click_header(col["name"])
+                st.rerun()
+    with header_cols[-1]:
+        st.markdown("**Действия**")
+
+    for row in sorted_rows:
         row_cols = st.columns(len(columns) + 1)
         for i, col in enumerate(columns):
             val = row["values"].get(col["name"], "")
@@ -249,7 +298,6 @@ for row in sorted_rows:
                     rating_val = max(1, min(10, rating_val))
                     new_val = st.slider("", 1, 10, rating_val, key=key, label_visibility="collapsed")
                 
-                # Если значение изменилось, сохраняем
                 if new_val != val:
                     row["values"][col["name"]] = new_val
                     save_data(data)
