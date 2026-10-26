@@ -1,6 +1,8 @@
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 import json
 import os
-import streamlit as st
 
 # ---------- Конфигурация страницы ----------
 st.set_page_config(
@@ -9,16 +11,18 @@ st.set_page_config(
     layout="wide",
 )
 
-DATA_FILE = "data.json"
+# --- НАСТРОЙКА ПОДКЛЮЧЕНИЯ К GOOGLE SHEETS ---
+# Streamlit автоматически подхватит настройки из secrets.toml
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ---------- Работа с данными ----------
 def default_data():
     return {
         "columns": [
-            {"name": "Название",       "type": "text"},
-            {"name": "Бюджетные места","type": "number"},
-            {"name": "Общежитие",      "type": "text"},
-            {"name": "Время в пути",   "type": "number"},
+            {"name": "Название",        "type": "text"},
+            {"name": "Бюджетные места", "type": "number"},
+            {"name": "Общежитие",       "type": "text"},
+            {"name": "Время в пути",    "type": "number"},
         ],
         "rows": [
             {"id": 1, "values": {"Название": "МГУ", "Бюджетные места": 4000, "Общежитие": "Да", "Время в пути": 60}},
@@ -26,21 +30,58 @@ def default_data():
             {"id": 3, "values": {"Название": "ВШЭ", "Бюджетные места": 3500, "Общежитие": "Нет", "Время в пути": 45}},
         ],
         "next_id": 4,
-        "sort": {"column": None, "direction": 0},  # direction: 0 = исходный, 1 = ▲, 2 = ▼
+        "sort": {"column": None, "direction": 0},
     }
 
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
+    try:
+        # Читаем данные из Google Sheets
+        df = conn.read(worksheet="Sheet1", ttl=0)
+        
+        # Если таблица пустая, возвращаем дефолтные данные
+        if df.empty or 'id' not in df.columns:
+            return default_data()
+        
+        data = default_data()
+        data['next_id'] = int(df['id'].max()) + 1 if not df.empty else 1
+        data['rows'] = []
+        
+        for _, row in df.iterrows():
+            row_dict = {"id": int(row['id']), "values": {}}
+            for col in data['columns']:
+                col_name = col['name']
+                if col_name in df.columns:
+                    val = row[col_name]
+                    row_dict['values'][col_name] = val if pd.notna(val) else ""
+            data['rows'].append(row_dict)
+        return data
+    except Exception as e:
+        st.warning(f"Не удалось загрузить данные из Google Sheets. Используются локальные. Ошибка: {e}")
+        # Если облако недоступно, грузим локальный файл (если есть)
+        if os.path.exists("data.json"):
+            with open("data.json", "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass
-    return default_data()
+        return default_data()
 
 def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    # Сохраняем локально как резервную копию
+    with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        
+    try:
+        # Сохраняем в Google Sheets
+        rows_list = []
+        for row in data['rows']:
+            flat_row = {"id": row["id"]}
+            flat_row.update(row["values"])
+            rows_list.append(flat_row)
+        
+        df = pd.DataFrame(rows_list)
+        if not df.empty:
+            conn.update(worksheet="Sheet1", data=df)
+            st.toast("Данные сохранены в облако", icon="✅")
+    except Exception as e:
+        st.error(f"Ошибка сохранения в Google Sheets: {e}")
 
 # ---------- Инициализация состояния ----------
 if "data" not in st.session_state:
@@ -50,9 +91,8 @@ data = st.session_state.data
 
 # ---------- Определение мобильного устройства ----------
 def is_mobile():
-    """Пытаемся определить телефон по User-Agent через заголовки."""
     try:
-        headers = st.context.headers  # доступно в Streamlit >= 1.30
+        headers = st.context.headers
         ua = headers.get("User-Agent", "").lower()
         mobile_markers = ["iphone", "android", "mobile", "ipad", "tablet"]
         return any(m in ua for m in mobile_markers)
@@ -93,9 +133,8 @@ def delete_column(name):
     save_data(data)
 
 def sort_key(value, col_type):
-    """Приводим значение к типу для корректной сортировки."""
     if value is None or value == "":
-        return (1, "")  # пустые в конец
+        return (1, "")
     if col_type == "number":
         try:
             return (0, float(value))
@@ -114,7 +153,6 @@ def get_sorted_rows():
     return rows
 
 def click_header(col_name):
-    """Циклическая сортировка: 1→▲, 2→▼, 3→сброс."""
     s = data["sort"]
     if s["column"] != col_name:
         s["column"] = col_name
@@ -157,13 +195,12 @@ else:
                     add_column(new_col_name.strip(), new_col_type)
                     st.rerun()
 
-# ---------- Заголовок таблицы с кнопками сортировки ----------
+# ---------- Заголовок таблицы ----------
 st.markdown("---")
 
 columns = data["columns"]
 sort_info = data["sort"]
 
-# Кнопки-заголовки (для сортировки)
 header_cols = st.columns(len(columns) + (1 if not MOBILE else 0))
 
 for i, col in enumerate(columns):
@@ -211,6 +248,8 @@ for row in sorted_rows:
                         rating_val = 5
                     rating_val = max(1, min(10, rating_val))
                     new_val = st.slider("", 1, 10, rating_val, key=key, label_visibility="collapsed")
+                
+                # Если значение изменилось, сохраняем
                 if new_val != val:
                     row["values"][col["name"]] = new_val
                     save_data(data)
