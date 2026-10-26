@@ -12,7 +12,6 @@ st.set_page_config(
 )
 
 # --- НАСТРОЙКА ПОДКЛЮЧЕНИЯ К GOOGLE SHEETS ---
-# Streamlit автоматически подхватит настройки из secrets.toml
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ---------- Работа с данными ----------
@@ -163,7 +162,7 @@ def click_header(col_name):
             s["column"] = None
     save_data(data)
 
-# ---------- UI ----------
+# ---------- UI: ВЕРХНЯЯ ПАНЕЛЬ ----------
 if MOBILE:
     st.markdown("### 🎓 Сравнение вузов (режим просмотра)")
     st.caption("Мобильная версия: только просмотр и сортировка")
@@ -195,44 +194,25 @@ else:
                     add_column(new_col_name.strip(), new_col_type)
                     st.rerun()
 
-# ---------- Заголовок таблицы ----------
 st.markdown("---")
 
 columns = data["columns"]
 sort_info = data["sort"]
-
-header_cols = st.columns(len(columns) + (1 if not MOBILE else 0))
-
-for i, col in enumerate(columns):
-    marker = ""
-    if sort_info["column"] == col["name"]:
-        marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
-    with header_cols[i]:
-        label = f"**{col['name']}{marker}**"
-        if st.button(label, key=f"sort_{col['name']}", use_container_width=True):
-            click_header(col["name"])
-            st.rerun()
-
-if not MOBILE:
-    with header_cols[-1]:
-        st.markdown("**Действия**")
-
-# ---------- Тело таблицы ----------
 sorted_rows = get_sorted_rows()
 
+# ---------- ОТРИСОВКА ТАБЛИЦЫ ----------
 if MOBILE:
     # --- МОБИЛЬНАЯ ВЕРСИЯ (КРАСИВАЯ ТАБЛИЦА) ---
-    # Формируем HTML-таблицу с горизонтальной прокруткой
     html = '<div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">'
     html += '<table style="width: 100%; border-collapse: collapse; text-align: left; font-family: sans-serif;">'
     
     # Заголовки таблицы
-    html += '<thead><tr style="background-color: #545251; border-bottom: 2px solid #b0b0b0;">'
+    html += '<thead><tr style="background-color: #545251; border-bottom: 2px solid #b0b0b0; color: white;">'
     for col in columns:
         marker = ""
         if sort_info["column"] == col["name"]:
             marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
-        html += f'<th style="padding: 10px; white-space: nowrap; border-right: 1px solid #ddd;">{col["name"]}{marker}</th>'
+        html += f'<th style="padding: 10px; white-space: nowrap; border-right: 1px solid #777;">{col["name"]}{marker}</th>'
     html += '</tr></thead><tbody>'
     
     # Строки таблицы
@@ -244,11 +224,9 @@ if MOBILE:
         html += '</tr>'
     
     html += '</tbody></table></div>'
-    
-    # Выводим на экран
     st.markdown(html, unsafe_allow_html=True)
     
-    # Кнопки сортировки под таблицей (чтобы на телефоне было удобно нажимать)
+    # Кнопки сортировки под таблицей
     st.markdown("<br>**Сортировать по:**", unsafe_allow_html=True)
     cols = st.columns(2)
     for i, col in enumerate(columns):
@@ -270,12 +248,14 @@ else:
             marker = " ▲" if sort_info["direction"] == 1 else (" ▼" if sort_info["direction"] == 2 else "")
         with header_cols[i]:
             label = f"**{col['name']}{marker}**"
-            if st.button(label, key=f"sort_{col['name']}", use_container_width=True):
+            # Вот здесь уникальный ключ: desk_sort_
+            if st.button(label, key=f"desk_sort_{col['name']}", use_container_width=True):
                 click_header(col["name"])
                 st.rerun()
     with header_cols[-1]:
         st.markdown("**Действия**")
 
+    # Строки таблицы
     for row in sorted_rows:
         row_cols = st.columns(len(columns) + 1)
         for i, col in enumerate(columns):
@@ -306,7 +286,7 @@ else:
                 delete_row(row["id"])
                 st.rerun()
 
-# ---------- Управление колонками (только ПК) ----------
+# ---------- УПРАВЛЕНИЕ КОЛОНКАМИ (ТОЛЬКО ПК) ----------
 if not MOBILE:
     with st.expander("⚙️ Удалить колонку"):
         col_to_delete = st.selectbox(
