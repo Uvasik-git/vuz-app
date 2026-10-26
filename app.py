@@ -227,7 +227,7 @@ if MOBILE:
     html += '<table style="width: 100%; border-collapse: collapse; text-align: left; font-family: sans-serif;">'
     
     # Заголовки таблицы
-    html += '<thead><tr style="background-color: #d9d9d9; border-bottom: 2px solid #b0b0b0;">'
+    html += '<thead><tr style="background-color: #545251; border-bottom: 2px solid #b0b0b0;">'
     for col in columns:
         marker = ""
         if sort_info["column"] == col["name"]:
